@@ -29,14 +29,30 @@ export const ERC20_MOCK_ABI = parseAbi([
   "function mint(address to, uint256 amount)",
 ]);
 
+// Real on-chain interface is OpenZeppelin's ERC7984ERC20Wrapper (verified on Sepolia).
+// euint64 / externalEuint64 are bytes32 on the wire.
+//  - wrap(to, amount): `amount` is in UNDERLYING base units; contract mints amount/rate() confidential units.
+//  - unwrap is async: submit an encrypted amount (6-dec confidential base units) -> get a requestId,
+//    then finalizeUnwrap(requestId, cleartext, proof) releases the underlying.
+//  - rate() = 10^(underlyingDecimals - confidentialDecimals); confidentialDecimals = min(underlying, 6).
 export const WRAPPER_ABI = parseAbi([
   "function name() view returns (string)",
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
+  "function rate() view returns (uint256)",
+  "function underlying() view returns (address)",
   "function confidentialBalanceOf(address account) view returns (bytes32)",
-  "function wrap(uint64 amount)",
-  "function unwrap(uint64 amount)",
+  "function wrap(address to, uint256 amount) returns (bytes32)",
+  "function unwrap(address from, address to, bytes32 encryptedAmount, bytes inputProof) returns (bytes32)",
+  "function finalizeUnwrap(bytes32 unwrapRequestId, uint64 unwrapAmountCleartext, bytes decryptionProof)",
+  "function unwrapAmount(bytes32 unwrapRequestId) view returns (bytes32)",
+  "event UnwrapRequested(address indexed receiver, bytes32 indexed unwrapRequestId, bytes32 amount)",
 ]);
+
+// Confidential ERC-7984 tokens always use min(underlyingDecimals, 6) decimals.
+export const CONFIDENTIAL_DECIMALS = 6;
+export const confDecimalsOf = (underlyingDecimals: number) =>
+  Math.min(underlyingDecimals, CONFIDENTIAL_DECIMALS);
 
 export type TokenPair = {
   tokenAddress: `0x${string}`;

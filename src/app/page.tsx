@@ -11,7 +11,7 @@ import {
 } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { sepolia } from "wagmi/chains";
-import { formatUnits, parseUnits } from "viem";
+import { formatUnits, parseUnits, toHex, parseEventLogs } from "viem";
 import {
   REGISTRY_ABI,
   REGISTRY_ADDRESS,
@@ -19,6 +19,7 @@ import {
   ERC20_MOCK_ABI,
   WRAPPER_ABI,
   FALLBACK_PAIRS,
+  confDecimalsOf,
   type TokenPair,
 } from "@/lib/registry";
 import { getFhevm } from "@/lib/fhe";
@@ -203,7 +204,9 @@ export default function Home() {
     setDecrypting((s) => ({ ...s, [id]: true }));
     try {
       const plain = await runUserDecrypt(p.confidentialTokenAddress);
-      const val = Number(formatUnits(plain, p.decimals ?? 18));
+      // Confidential balances are denominated in the ERC-7984 token's own decimals (min(underlying,6)),
+      // NOT the underlying ERC-20 decimals.
+      const val = Number(formatUnits(plain, confDecimalsOf(p.decimals ?? 18)));
       setDecryptedVal((s) => ({ ...s, [id]: val }));
       setDecrypted((s) => ({ ...s, [id]: true }));
       showToast("🔓", "var(--violet)", "Balance decrypted", (p.confSymbol ?? p.symbol ?? "") + " · EIP-712 verified");
@@ -229,26 +232,28 @@ export default function Home() {
 
   const confirmWrap = async () => {
     const p = byId(wrapPairId);
-    if (!p || !walletClient || !publicClient) return;
+    if (!p || !walletClient || !publicClient || !address) return;
     const amt = parseFloat(amount);
     if (!amt || amt <= 0 || wrapStep !== 0) return;
-    const decimals = p.decimals ?? 18;
-    let amtBig: bigint;
-    try {
-      amtBig = parseUnits(amount, decimals);
-    } catch {
-      showToast("!", "var(--bad)", "Invalid amount", "Enter a valid number");
-      return;
-    }
+    const underlyingDecimals = p.decimals ?? 18;
+    const confDecimals = confDecimalsOf(underlyingDecimals);
     if (wrongNetwork) {
       switchChain({ chainId: sepolia.id });
       return;
     }
     try {
       if (wrapMode === "wrap") {
+        // wrap takes the amount in UNDERLYING base units; the wrapper divides by rate() internally.
+        let amtBig: bigint;
+        try {
+          amtBig = parseUnits(amount, underlyingDecimals);
+        } catch {
+          showToast("!", "var(--bad)", "Invalid amount", "Enter a valid number");
+          return;
+        }
         const have = erc20Bal[wrapPairId] ?? BigInt(0);
         if (amtBig > have) {
-          showToast("!", "var(--bad)", "Insufficient balance", `You only have ${fmtNum(Number(formatUnits(have, decimals)))} ${p.symbol}`);
+          showToast("!", "var(--bad)", "Insufficient balance", `You only have ${fmtNum(Number(formatUnits(have, underlyingDecimals)))} ${p.symbol}`);
           return;
         }
         setWrapStep(1);
@@ -260,7 +265,7 @@ export default function Home() {
         setWrapStep(2);
         const wrapTx = await walletClient.writeContract({
           address: p.confidentialTokenAddress, abi: WRAPPER_ABI, functionName: "wrap",
-          args: [amtBig],
+          args: [address, amtBig],
         });
         await publicClient.waitForTransactionReceipt({ hash: wrapTx });
         setWrapStep(3);
@@ -273,13 +278,68 @@ export default function Home() {
         });
         showToast("✓", "var(--good)", `Wrapped ${fmtNum(amt)} ${p.symbol}`, "Balance is now confidential");
       } else {
-        setWrapStep(2);
+        // Unwrap is async: encrypt the confidential amount (6-dec base units), submit an unwrap
+        // request, then finalize it with a public-decryption proof from the relayer.
+        let confAmtBig: bigint;
+        try {
+          confAmtBig = parseUnits(amount, confDecimals);
+        } catch {
+          showToast("!", "var(--bad)", "Invalid amount", "Enter a valid number");
+          return;
+        }
+        const provider = (window as { ethereum?: unknown }).ethereum as import("ethers").Eip1193Provider;
+        const fhevm = await getFhevm(provider);
+
+        // Step 1 — build encrypted input + submit unwrap request
+        setWrapStep(1);
+        const input = fhevm.createEncryptedInput(p.confidentialTokenAddress, address);
+        input.add64(confAmtBig);
+        const enc = await input.encrypt();
         const unwrapTx = await walletClient.writeContract({
           address: p.confidentialTokenAddress, abi: WRAPPER_ABI, functionName: "unwrap",
-          args: [amtBig],
+          args: [address, address, toHex(enc.handles[0]), toHex(enc.inputProof)],
         });
-        await publicClient.waitForTransactionReceipt({ hash: unwrapTx });
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: unwrapTx });
+
+        // Recover the unwrap request id from the emitted event
+        const events = parseEventLogs({ abi: WRAPPER_ABI, eventName: "UnwrapRequested", logs: receipt.logs });
+        const requestId = events[0]?.args?.unwrapRequestId as `0x${string}` | undefined;
+        if (!requestId) throw new Error("Unwrap request id not found in logs");
+
+        // Step 2 — public-decrypt the burned amount and finalize (relayer may need a moment)
+        setWrapStep(2);
+        let cleartext: bigint | undefined;
+        let decryptionProof: `0x${string}` | undefined;
+        for (let i = 0; i < 12 && cleartext === undefined; i++) {
+          try {
+            const pub = await fhevm.publicDecrypt([requestId]);
+            const entry = Object.entries(pub.clearValues).find(
+              ([k]) => k.toLowerCase() === requestId.toLowerCase()
+            );
+            if (entry) {
+              cleartext = BigInt(entry[1] as string | number | bigint);
+              decryptionProof = pub.decryptionProof;
+            }
+          } catch {
+            await new Promise((r) => setTimeout(r, 2500));
+          }
+        }
+        if (cleartext === undefined || !decryptionProof) {
+          throw new Error("Relayer decryption pending — retry finalize shortly");
+        }
+        const finalizeTx = await walletClient.writeContract({
+          address: p.confidentialTokenAddress, abi: WRAPPER_ABI, functionName: "finalizeUnwrap",
+          args: [requestId, cleartext, decryptionProof],
+        });
+        await publicClient.waitForTransactionReceipt({ hash: finalizeTx });
         setWrapStep(3);
+        // confidential balance changed → require a fresh decrypt
+        setDecrypted((s) => ({ ...s, [wrapPairId]: false }));
+        setDecryptedVal((s) => {
+          const n = { ...s };
+          delete n[wrapPairId];
+          return n;
+        });
         showToast("✓", "var(--good)", `Unwrapped ${fmtNum(amt)} ${p.confSymbol ?? p.symbol}`, "Now public on Sepolia");
       }
       loadBalances();
@@ -310,7 +370,8 @@ export default function Home() {
     setArbResult(null);
     try {
       const match = pairs.find((r) => r.confidentialTokenAddress.toLowerCase() === addr.toLowerCase());
-      const decimals = match?.decimals ?? 18;
+      // ERC-7984 confidential tokens are 6-decimal (min(underlying,6)); default to 6 for unknown tokens.
+      const decimals = confDecimalsOf(match?.decimals ?? 6);
       const plain = await runUserDecrypt(addr as `0x${string}`);
       const val = Number(formatUnits(plain, decimals));
       const handle = "0x" + Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join("") +
@@ -391,14 +452,14 @@ export default function Home() {
   ];
 
   const stepDefs = [
-    { idx: 1, label: isWrap ? "Approve " + (wrapPair?.symbol ?? "") : "Allowance" },
-    { idx: 2, label: isWrap ? "Wrap" : "Unwrap" },
+    { idx: 1, label: isWrap ? "Approve " + (wrapPair?.symbol ?? "") : "Request unwrap" },
+    { idx: 2, label: isWrap ? "Wrap" : "Finalize" },
     { idx: 3, label: "Confirmed" },
   ];
   const confirmLabelMap: Record<number, string> = {
     0: (isWrap ? "Wrap " : "Unwrap ") + (fromSym ?? ""),
-    1: isWrap ? `Approving ${wrapPair?.symbol}…` : "Setting allowance…",
-    2: isWrap ? "Wrapping…" : "Unwrapping…",
+    1: isWrap ? `Approving ${wrapPair?.symbol}…` : "Requesting unwrap…",
+    2: isWrap ? "Wrapping…" : "Finalizing…",
     3: "Done ✓",
   };
   const canConfirm = amtNum > 0 && wrapStep === 0;
