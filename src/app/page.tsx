@@ -11,7 +11,7 @@ import {
 } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { sepolia } from "wagmi/chains";
-import { formatUnits, parseUnits, toHex, parseEventLogs } from "viem";
+import { formatUnits, parseUnits, toHex, parseEventLogs, encodeFunctionData } from "viem";
 import {
   REGISTRY_ABI,
   REGISTRY_ADDRESS,
@@ -284,12 +284,14 @@ export default function Home() {
         });
         await publicClient.waitForTransactionReceipt({ hash: approveTx });
         setWrapStep(2);
-        // Explicit gas bypasses viem's eth_estimateGas — FHE operations return
-        // inflated estimates that exceed the block gas limit on Zama Sepolia.
-        const wrapTx = await walletClient.writeContract({
-          address: p.confidentialTokenAddress, abi: WRAPPER_ABI, functionName: "wrap",
-          args: [address, amtBig],
+        // Use sendTransaction with pre-encoded calldata — bypasses MetaMask's
+        // internal eth_estimateGas which fails on FHE coprocessor calls and
+        // causes a spurious "gas limit too high" rejection.
+        const wrapTx = await walletClient.sendTransaction({
+          to: p.confidentialTokenAddress,
+          data: encodeFunctionData({ abi: WRAPPER_ABI, functionName: "wrap", args: [address, amtBig] }),
           gas: BigInt(2_000_000),
+          account: address,
         });
         await publicClient.waitForTransactionReceipt({ hash: wrapTx });
         setWrapStep(3);
@@ -319,10 +321,11 @@ export default function Home() {
         const input = fhevm.createEncryptedInput(p.confidentialTokenAddress, address);
         input.add64(confAmtBig);
         const enc = await input.encrypt();
-        const unwrapTx = await walletClient.writeContract({
-          address: p.confidentialTokenAddress, abi: WRAPPER_ABI, functionName: "unwrap",
-          args: [address, address, toHex(enc.handles[0]), toHex(enc.inputProof)],
+        const unwrapTx = await walletClient.sendTransaction({
+          to: p.confidentialTokenAddress,
+          data: encodeFunctionData({ abi: WRAPPER_ABI, functionName: "unwrap", args: [address, address, toHex(enc.handles[0]), toHex(enc.inputProof)] }),
           gas: BigInt(2_000_000),
+          account: address,
         });
         const receipt = await publicClient.waitForTransactionReceipt({ hash: unwrapTx });
 
@@ -352,10 +355,11 @@ export default function Home() {
         if (cleartext === undefined || !decryptionProof) {
           throw new Error("Relayer decryption pending — retry finalize shortly");
         }
-        const finalizeTx = await walletClient.writeContract({
-          address: p.confidentialTokenAddress, abi: WRAPPER_ABI, functionName: "finalizeUnwrap",
-          args: [requestId, cleartext, decryptionProof],
+        const finalizeTx = await walletClient.sendTransaction({
+          to: p.confidentialTokenAddress,
+          data: encodeFunctionData({ abi: WRAPPER_ABI, functionName: "finalizeUnwrap", args: [requestId, cleartext, decryptionProof] }),
           gas: BigInt(1_000_000),
+          account: address,
         });
         await publicClient.waitForTransactionReceipt({ hash: finalizeTx });
         setWrapStep(3);
