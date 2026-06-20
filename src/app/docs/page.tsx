@@ -240,11 +240,3 @@ function Cards({ items }: { items: { icon: string; title: string; desc: string }
   );
 }
 
-function Addr({ label, addr }: { label: string; addr: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: "#13121c", border: "1px solid #1e1d2a", marginBottom: 8 }}>
-      <span style={{ fontSize: 13, color: "#777", minWidth: 140 }}>{label}</span>
-      <a href={`https://sepolia.etherscan.io/address/${addr}`} target="_blank" rel="noopener noreferrer" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: "#9d8eff", textDecoration: "none" }}>{addr}</a>
-    </div>
-  );
-}
