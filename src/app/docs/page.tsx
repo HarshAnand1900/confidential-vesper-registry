@@ -174,10 +174,6 @@ export default function DocsPage() {
                 ))}
               </tbody>
             </table>
-            <div style={{ marginTop: 20 }}>
-              <P style={{ fontSize: 13, color: "#666" }}>The <B>Wrappers Registry</B> below is Zama&apos;s official onchain registry — it&apos;s not your wallet address. VEIL reads all 8 pairs directly from this contract on every load.</P>
-              <Addr label="Wrappers Registry (Zama)" addr="0x2f0750Bbb0A246059d80e94c454586a7F27a128e" />
-            </div>
           </Section>
 
         </main>
