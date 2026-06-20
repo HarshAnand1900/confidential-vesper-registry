@@ -868,7 +868,9 @@ export default function Home() {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <input value={amount} onChange={(e) => { setAmount(e.target.value.replace(/[^0-9.]/g, "")); setWrapStep(0); }} placeholder="0.0" inputMode="decimal" style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontFamily: "'JetBrains Mono'", fontSize: 28, fontWeight: 500, color: "var(--text)", minWidth: 0 }} />
-                      <button onClick={onMax} style={{ padding: "6px 11px", borderRadius: 8, cursor: "pointer", border: "1px solid var(--border2)", background: "transparent", color: "var(--accent)", fontWeight: 600, fontSize: 12, fontFamily: "'Instrument Sans'" }}>MAX</button>
+                      {[25, 50, 100].map(pct => (
+                        <button key={pct} onClick={() => { const p2 = byId(wrapPairId); if (!p2) return; const v = wrapMode === "wrap" ? Number(formatUnits(erc20Bal[wrapPairId] ?? BigInt(0), p2.decimals ?? 18)) : (decryptedVal[wrapPairId] ?? 0); setAmount(String(Math.floor(v * pct / 100 * 1e6) / 1e6)); setWrapStep(0); }} style={{ padding: "6px 9px", borderRadius: 8, cursor: "pointer", border: "1px solid var(--border2)", background: "transparent", color: "var(--accent)", fontWeight: 600, fontSize: 12, fontFamily: "'Instrument Sans'" }}>{pct === 100 ? "MAX" : `${pct}%`}</button>
+                      ))}
                       <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 12px", borderRadius: 99, background: "var(--surface)", border: "1px solid var(--border)" }}><TokenIcon symbol={wrapPair.symbol} size={20} radius={6} /><span style={{ fontWeight: 600, fontSize: 14, fontFamily: "'Space Grotesk'" }}>{fromSym}</span></div>
                     </div>
                   </div>
@@ -973,9 +975,13 @@ export default function Home() {
                           <span style={{ fontSize: 12, color: "var(--muted)" }}>Drips</span>
                           <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 14, color: "var(--text)" }}>1,000 {p.symbol}</span>
                         </div>
-                        <button onClick={faucet(id)} disabled={fBusy || fDone} style={{ width: "100%", padding: 11, borderRadius: 11, border: `1px solid ${fDone ? "color-mix(in oklch, var(--good) 40%, transparent)" : "transparent"}`, cursor: fBusy || fDone ? "default" : "pointer", fontFamily: "'Instrument Sans'", fontWeight: 600, fontSize: 13.5, color: fDone ? "var(--good)" : fBusy ? "var(--muted)" : accentInk, background: fDone ? "transparent" : fBusy ? "var(--surface2)" : "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, transition: "all .2s" }}>
-                          {fBusy ? <><span style={{ width: 13, height: 13, border: "2px solid currentColor", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin .7s linear infinite" }} />Claiming…</> : fDone ? "✓ Claimed" : "Claim tokens"}
-                        </button>
+                        {p.noFaucet ? (
+                          <div style={{ width: "100%", padding: 11, borderRadius: 11, border: "1px solid var(--border)", textAlign: "center", fontSize: 13, color: "var(--faint)", fontFamily: "'Instrument Sans'" }}>Not available</div>
+                        ) : (
+                          <button onClick={faucet(id)} disabled={fBusy || fDone} style={{ width: "100%", padding: 11, borderRadius: 11, border: `1px solid ${fDone ? "color-mix(in oklch, var(--good) 40%, transparent)" : "transparent"}`, cursor: fBusy || fDone ? "default" : "pointer", fontFamily: "'Instrument Sans'", fontWeight: 600, fontSize: 13.5, color: fDone ? "var(--good)" : fBusy ? "var(--muted)" : accentInk, background: fDone ? "transparent" : fBusy ? "var(--surface2)" : "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, transition: "all .2s" }}>
+                            {fBusy ? <><span style={{ width: 13, height: 13, border: "2px solid currentColor", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin .7s linear infinite" }} />Claiming…</> : fDone ? "✓ Claimed" : "Claim tokens"}
+                          </button>
+                        )}
                       </div>
                     );
                   })}

@@ -94,7 +94,8 @@ export type TokenPair = {
   confSymbol?: string;
   confName?: string;
   confDecimals?: number;
-  rate?: bigint; // 10^(underlyingDecimals - confDecimals); base-unit conversion factor
+  rate?: bigint;
+  noFaucet?: boolean; // true when underlying ERC-20 has no public mint() // 10^(underlyingDecimals - confDecimals); base-unit conversion factor
   // visual metadata (Veil design)
   glyph?: string;
   dotColor?: string;
@@ -205,6 +206,7 @@ export const FALLBACK_PAIRS: TokenPair[] = [
     confSymbol: "ctGBP",
     confName: "Confidential tGBP",
     confDecimals: 6,
+    noFaucet: true,
     glyph: "£",
     dotColor: "linear-gradient(135deg,#159E6E,#46d6a0)",
   },
