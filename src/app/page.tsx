@@ -21,6 +21,7 @@ import {
   FALLBACK_PAIRS,
   confDecimalsOf,
   visualFor,
+  formatRate,
   type TokenPair,
 } from "@/lib/registry";
 import { getFhevm } from "@/lib/fhe";
@@ -126,23 +127,27 @@ export default function Home() {
         valid.map(async (p) => {
           const erc20 = { address: p.tokenAddress, abi: ERC20_ABI } as const;
           const wrap = { address: p.confidentialTokenAddress, abi: WRAPPER_ABI } as const;
-          const [symbol, name, decimals, confSymbol, confName] = await Promise.all([
+          const [symbol, name, decimals, confSymbol, confName, rate] = await Promise.all([
             publicClient.readContract({ ...erc20, functionName: "symbol" }).catch(() => undefined),
             publicClient.readContract({ ...erc20, functionName: "name" }).catch(() => undefined),
             publicClient.readContract({ ...erc20, functionName: "decimals" }).catch(() => 18),
             publicClient.readContract({ ...wrap, functionName: "symbol" }).catch(() => undefined),
             publicClient.readContract({ ...wrap, functionName: "name" }).catch(() => undefined),
+            publicClient.readContract({ ...wrap, functionName: "rate" }).catch(() => undefined),
           ]);
           const vis = visualFor(p.tokenAddress, symbol as string | undefined);
+          const dec = Number(decimals ?? 18);
           return {
             tokenAddress: p.tokenAddress,
             confidentialTokenAddress: p.confidentialTokenAddress,
             isValid: p.isValid,
             symbol: symbol as string | undefined,
             name: name as string | undefined,
-            decimals: Number(decimals ?? 18),
+            decimals: dec,
             confSymbol: confSymbol as string | undefined,
             confName: confName as string | undefined,
+            confDecimals: confDecimalsOf(dec),
+            rate: rate as bigint | undefined,
             glyph: vis.glyph,
             dotColor: vis.dotColor,
           };
@@ -629,7 +634,10 @@ export default function Home() {
                                 <div style={{ fontSize: 12.5, color: "var(--muted)" }}>{p.name}</div>
                               </div>
                             </div>
-                            <div style={{ fontSize: 11, color: "var(--faint)", fontFamily: "'JetBrains Mono'" }}>{p.decimals} dec</div>
+                            <div title={`Underlying ${p.decimals} decimals → confidential ${p.confDecimals ?? confDecimalsOf(p.decimals ?? 18)} decimals. Conversion rate ${formatRate(p.rate)} (base units).`} style={{ textAlign: "right", fontFamily: "'JetBrains Mono'", lineHeight: 1.45 }}>
+                              <div style={{ fontSize: 11, color: "var(--faint)" }}>{p.decimals}→{p.confDecimals ?? confDecimalsOf(p.decimals ?? 18)} dec</div>
+                              <div style={{ fontSize: 10.5, color: "var(--violet)" }}>rate {formatRate(p.rate)}</div>
+                            </div>
                           </div>
 
                           <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
@@ -681,7 +689,7 @@ export default function Home() {
                         <div key={id} className="veil-hover-row" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1.1fr 1.1fr 1.3fr", gap: 12, padding: "14px 18px", alignItems: "center", borderBottom: "1px solid var(--border)", transition: "background .15s" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                             <div style={{ width: 32, height: 32, borderRadius: 10, background: p.dotColor, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Space Grotesk'", fontWeight: 700, fontSize: 12, color: "#fff" }}>{p.glyph}</div>
-                            <div><div style={{ fontFamily: "'Space Grotesk'", fontWeight: 600, fontSize: 14 }}>{p.confSymbol}</div><div style={{ fontSize: 11.5, color: "var(--muted)" }}>{p.name}</div></div>
+                            <div><div style={{ fontFamily: "'Space Grotesk'", fontWeight: 600, fontSize: 14 }}>{p.confSymbol}</div><div style={{ fontSize: 11.5, color: "var(--muted)" }}>{p.name} · {p.decimals}→{p.confDecimals ?? confDecimalsOf(p.decimals ?? 18)} dec · rate {formatRate(p.rate)}</div></div>
                           </div>
                           <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 13 }}>{erc20Fmt}</div>
                           <div>
@@ -758,6 +766,10 @@ export default function Home() {
                       <div style={{ flex: 1, fontFamily: "'JetBrains Mono'", fontSize: 28, fontWeight: 500, color: amtNum > 0 ? "var(--text)" : "var(--faint)" }}>{amtNum > 0 ? fmtNum(amtNum) : "0.0"}</div>
                       <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 12px", borderRadius: 99, background: "var(--surface)", border: "1px solid var(--border)" }}><span style={{ fontSize: 13 }}>🔒</span><span style={{ fontWeight: 600, fontSize: 14, fontFamily: "'Space Grotesk'" }}>{toSym}</span></div>
                     </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 16, fontSize: 11.5, color: "var(--faint)", fontFamily: "'JetBrains Mono'" }}>
+                    1 {wrapPair.confSymbol} = 1 {wrapPair.symbol} · onchain rate {formatRate(wrapPair.rate)} ({wrapPair.decimals}→{wrapPair.confDecimals ?? confDecimalsOf(wrapPair.decimals ?? 18)} dec base units)
                   </div>
 
                   {wrapStep > 0 && (

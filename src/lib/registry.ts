@@ -93,10 +93,21 @@ export type TokenPair = {
   decimals?: number;
   confSymbol?: string;
   confName?: string;
+  confDecimals?: number;
+  rate?: bigint; // 10^(underlyingDecimals - confDecimals); base-unit conversion factor
   // visual metadata (Veil design)
   glyph?: string;
   dotColor?: string;
 };
+
+// "1e12" / "1:1" style label for a wrapper conversion rate.
+export function formatRate(rate?: bigint): string {
+  if (rate === undefined) return "—";
+  if (rate <= BigInt(1)) return "1:1";
+  const s = rate.toString();
+  const exp = s.length - 1; // power of ten
+  return s === "1" + "0".repeat(exp) ? `10^${exp}` : `×${s}`;
+}
 
 // Hardcoded fallback for Sepolia official pairs
 export const FALLBACK_PAIRS: TokenPair[] = [
