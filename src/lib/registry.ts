@@ -190,7 +190,7 @@ export const FALLBACK_PAIRS: TokenPair[] = [
     isValid: true,
     symbol: "XAUtMock",
     name: "XAUt Mock",
-    decimals: 18,
+    decimals: 6,
     confSymbol: "cXAUtMock",
     confName: "Confidential XAUt Mock",
     glyph: "Au",

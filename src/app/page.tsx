@@ -227,7 +227,7 @@ export default function Home() {
   );
 
   const decrypt = (id: string) => async () => {
-    if (decrypting[id] || decrypted[id]) return;
+    if (decrypting[id]) return; // allow re-decrypt to refresh; only block concurrent runs
     const p = byId(id);
     if (!p) return;
     setDecrypting((s) => ({ ...s, [id]: true }));
@@ -422,8 +422,15 @@ export default function Home() {
     setArbResult(null);
     try {
       const match = pairs.find((r) => r.confidentialTokenAddress.toLowerCase() === addr.toLowerCase());
-      // ERC-7984 confidential tokens are 6-decimal (min(underlying,6)); default to 6 for unknown tokens.
-      const decimals = confDecimalsOf(match?.decimals ?? 6);
+      // The ERC-7984 contract's own decimals() returns the confidential decimals directly.
+      // For known pairs use the cached value; for arbitrary tokens read it live (fallback 6).
+      let decimals = match?.confDecimals ?? confDecimalsOf(match?.decimals ?? 6);
+      if (!match) {
+        const liveDec = await publicClient.readContract({
+          address: addr as `0x${string}`, abi: WRAPPER_ABI, functionName: "decimals",
+        }).catch(() => undefined);
+        if (typeof liveDec === "number") decimals = liveDec;
+      }
       // Real ciphertext handle from the contract — not a placeholder.
       const rawHandle = await publicClient.readContract({
         address: addr as `0x${string}`, abi: WRAPPER_ABI, functionName: "confidentialBalanceOf", args: [address],
@@ -465,7 +472,8 @@ export default function Home() {
         args: [address, parseUnits("1000", p.decimals ?? 18)],
         gas: BigInt(200_000),
       });
-      await publicClient.waitForTransactionReceipt({ hash: tx });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: tx });
+      if (receipt.status === "reverted") throw new Error("Mint reverted — this token may not have a public faucet");
       setFaucetDone((s) => ({ ...s, [id]: true }));
       playCoin();
       showToast("✓", "var(--good)", `Claimed 1,000 ${p.symbol}`, "Sent to " + short(address));
@@ -769,7 +777,9 @@ export default function Home() {
                                 {isDecing ? <span style={{ width: 14, height: 14, border: "2px solid var(--violet)", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin .7s linear infinite" }} /> : <span>🔓</span>}
                               </button>
                             ) : (
-                              <div style={{ width: 42, borderRadius: 11, background: "color-mix(in oklch, var(--good) 18%, transparent)", color: "var(--good)", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center" }}>✓</div>
+                              <button onClick={decrypt(id)} title="Refresh decrypted balance" style={{ width: 42, borderRadius: 11, cursor: "pointer", border: "1px solid color-mix(in oklch, var(--good) 30%, transparent)", background: "color-mix(in oklch, var(--good) 18%, transparent)", color: "var(--good)", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                {isDecing ? <span style={{ width: 14, height: 14, border: "2px solid var(--good)", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin .7s linear infinite" }} /> : <span>✓</span>}
+                              </button>
                             )}
                           </div>
                         </div>
@@ -811,7 +821,9 @@ export default function Home() {
                                 {isDecing ? <span style={{ width: 12, height: 12, border: "2px solid var(--violet)", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin .7s linear infinite" }} /> : <span>🔓</span>}
                               </button>
                             ) : (
-                              <span style={{ padding: "7px 9px", color: "var(--good)", fontSize: 13 }}>✓</span>
+                              <button onClick={decrypt(id)} title="Refresh balance" style={{ padding: "7px 9px", color: "var(--good)", fontSize: 13, cursor: "pointer", background: "transparent", border: "none", display: "flex", alignItems: "center", justifyContent: "center", minWidth: 32 }}>
+                                {isDecing ? <span style={{ width: 12, height: 12, border: "2px solid var(--good)", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin .7s linear infinite" }} /> : <span>✓</span>}
+                              </button>
                             )}
                           </div>
                         </div>
@@ -953,7 +965,7 @@ export default function Home() {
                 <h1 style={{ fontFamily: "'Space Grotesk'", fontWeight: 700, fontSize: 32, letterSpacing: "-.02em", marginBottom: 6, textAlign: "center" }}>Sepolia faucet</h1>
                 <p style={{ color: "var(--muted)", fontSize: 15, textAlign: "center", marginBottom: 26 }}>Claim the official cTokenMock test tokens from the Sepolia Wrappers Registry, then wrap them into their confidential form.</p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 13 }}>
-                  {pairs.map((p) => {
+                  {pairs.filter(p => !p.noFaucet).map((p) => {
                     const id = idOf(p);
                     const fBusy = !!faucetBusy[id];
                     const fDone = !!faucetDone[id];
