@@ -109,15 +109,29 @@ export default function DocsPage() {
           </Section>
 
           <Section id="decrypt" title="Decrypting your balance (EIP-712)">
-            <P>FHE balances are encrypted on-chain. To read your own balance, you generate a temporary keypair, sign an EIP-712 message authorising the relayer to decrypt only for you, and the relayer returns the plaintext — never touching the chain.</P>
+            <P>On-chain, your confidential balance is stored as an <Code>euint64</Code> — an encrypted integer that even the blockchain itself cannot read. The Decrypt tab lets <B>you</B> reveal your own balance without creating a transaction or exposing anything publicly.</P>
+
+            <P>Why you need this:</P>
+            <ul style={{ paddingLeft: 20, color: "#aaa", lineHeight: 2, fontSize: 14, marginBottom: 16 }}>
+              <li><B>Verify your wrapped balance</B> — after wrapping 100 USDC, confirm you actually hold 100 cUSDC</li>
+              <li><B>Check any ERC-7984 token</B> — not just the 8 registry pairs; paste any confidential token address</li>
+              <li><B>No chain activity</B> — a third party watching the blockchain sees nothing when you decrypt</li>
+            </ul>
+
+            <P>How it works under the hood:</P>
             <Steps items={[
-              "Click 🔓 on any registry card, or go to the Decrypt tab",
-              "Your wallet asks you to sign an EIP-712 typed message (no gas, no transaction)",
-              "The relayer verifies your signature and decrypts only the balance belonging to your address",
-              "The plaintext balance appears — only in your browser, never on-chain",
+              "The app generates a temporary keypair (public + private key) locally in your browser",
+              "An EIP-712 typed message is created: \"I authorise the Zama Gateway to decrypt my balance at [contract], re-encrypted with my public key, valid for 7 days\"",
+              "Your wallet signs the message — no gas, no transaction, just a signature",
+              "The signature + public key go to the Zama relayer, which verifies you own that address",
+              "The relayer decrypts your balance and re-encrypts the result with your public key — only your private key can read it",
+              "The app decrypts locally and shows you the plaintext number — never leaves your browser",
             ]} />
-            <P>The Decrypt tab also supports <B>arbitrary decrypt</B> — paste any ERC-7984 contract address to decrypt your balance in that token, even if it&apos;s not in the registry.</P>
-            <Callout>Your signature expires after 7 days. If you wrap more tokens, click 🔓 again to get the updated balance.</Callout>
+
+            <P><B>Arbitrary decrypt</B> — the input field accepts any ERC-7984 contract address on Sepolia, not just the 8 registry pairs. If someone deploys their own confidential token, you can decrypt your balance in it here. The 4 quick-fill chips are shortcuts for the most common pairs.</P>
+
+            <Callout>Your EIP-712 signature authorises decryption for 7 days. If you wrap more tokens after signing, click 🔓 again to get the updated balance — the old signature covers the old state.</Callout>
+            <Callout type="info">Nothing is revealed on-chain. The decrypt flow is entirely off-chain between your browser and the Zama relayer.</Callout>
           </Section>
 
           <Section id="fhe" title="How FHE works">
