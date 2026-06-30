@@ -144,6 +144,9 @@ export default function Home() {
         const sym = symbol as string | undefined;
         const addrTail = p.tokenAddress.slice(-4).toUpperCase();
         const vis = visualFor(p.tokenAddress, sym);
+        const fallbackMatch = FALLBACK_PAIRS.find(
+          (fp) => fp.tokenAddress.toLowerCase() === p.tokenAddress.toLowerCase()
+        );
         enriched.push({
           tokenAddress: p.tokenAddress,
           confidentialTokenAddress: p.confidentialTokenAddress,
@@ -155,6 +158,7 @@ export default function Home() {
           confName: (confName as string | undefined) ?? `Conf·${addrTail}`,
           confDecimals: confDecimalsOf(dec),
           rate: rate as bigint | undefined,
+          noFaucet: fallbackMatch?.noFaucet,
           glyph: vis.glyph,
           dotColor: vis.dotColor,
         });
