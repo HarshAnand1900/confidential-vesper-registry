@@ -3,8 +3,8 @@
 > **Zama Developer Program · Mainnet Season 3 · Bounty Track**  
 > Wrap ERC-20 tokens into encrypted ERC-7984 confidential tokens. Decrypt only what you choose to see.
 
-**Live app:** https://confidential-vesper-registry.vercel.app  
-**Docs:** https://confidential-vesper-registry.vercel.app/docs  
+**Live app:** https://confidential-wrapper-registry-weld.vercel.app  
+**Docs:** https://confidential-wrapper-registry-weld.vercel.app/docs  
 **Network:** Ethereum Sepolia (chainId 11155111)
 
 ---

@@ -74,7 +74,7 @@ export default function DocsPage() {
           </Section>
 
           <Section id="faucet" title="Faucet">
-            <P>Each of the 8 pairs has a mock underlying ERC-20 with a public <Code>mint(address, amount)</Code> function. The faucet calls this to send 1,000 tokens directly to your wallet.</P>
+            <P>Most pairs have a mock underlying ERC-20 with a public <Code>mint(address, amount)</Code> function. The faucet calls this to send 1,000 tokens directly to your wallet. One pair (<Code>tGBP</Code>) has no public mint on-chain and is hidden from this tab — you can still wrap/decrypt it if you already hold the underlying.</P>
             <Steps items={[
               "Connect your wallet on Sepolia",
               "Go to the Faucet tab",

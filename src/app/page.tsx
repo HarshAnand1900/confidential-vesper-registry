@@ -363,15 +363,24 @@ export default function Home() {
         const requestId = events[0]?.args?.unwrapRequestId as `0x${string}` | undefined;
         if (!requestId) throw new Error("Unwrap request id not found in logs");
 
+        // The request id is only a lookup key — the ciphertext handle that must
+        // actually be publicly decrypted is returned by unwrapAmount(requestId).
+        // (finalizeUnwrap on-chain checks signatures against THIS handle, not the id.)
+        const amountHandle = await publicClient.readContract({
+          address: p.confidentialTokenAddress, abi: WRAPPER_ABI,
+          functionName: "unwrapAmount", args: [requestId],
+        });
+        if (!amountHandle) throw new Error("Unwrap amount handle not found");
+
         // Step 2 — public-decrypt the burned amount and finalize (relayer may need a moment)
         setWrapStep(2);
         let cleartext: bigint | undefined;
         let decryptionProof: `0x${string}` | undefined;
         for (let i = 0; i < 12 && cleartext === undefined; i++) {
           try {
-            const pub = await fhevm.publicDecrypt([requestId]);
+            const pub = await fhevm.publicDecrypt([amountHandle]);
             const entry = Object.entries(pub.clearValues).find(
-              ([k]) => k.toLowerCase() === requestId.toLowerCase()
+              ([k]) => k.toLowerCase() === amountHandle.toLowerCase()
             );
             if (entry) {
               cleartext = BigInt(entry[1] as string | number | bigint);
