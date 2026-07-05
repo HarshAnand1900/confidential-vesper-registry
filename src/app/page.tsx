@@ -122,7 +122,11 @@ export default function Home() {
         abi: REGISTRY_ABI,
         functionName: "getTokenConfidentialTokenPairs",
       });
-      const valid = raw.filter((p) => p.isValid);
+      // Only show the official Zama-registered mock pairs this app supports.
+      // Third parties can also register pairs on the shared registry contract —
+      // those aren't part of this bounty's official token set, so filter them out.
+      const known = new Set(FALLBACK_PAIRS.map((fp) => fp.tokenAddress.toLowerCase()));
+      const valid = raw.filter((p) => p.isValid && known.has(p.tokenAddress.toLowerCase()));
 
       // Read all token metadata live from chain — nothing hardcoded except cosmetics.
       // Load metadata sequentially to avoid rate-limiting the public RPC (40 parallel calls = drops).
