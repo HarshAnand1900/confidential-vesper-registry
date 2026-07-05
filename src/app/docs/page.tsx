@@ -10,6 +10,7 @@ const SECTIONS = [
   { id: "unwrap", label: "Unwrap" },
   { id: "decrypt", label: "Decrypt" },
   { id: "fhe", label: "How FHE works" },
+  { id: "extend", label: "Add a pair" },
   { id: "contracts", label: "Contracts" },
 ];
 
@@ -151,6 +152,35 @@ export default function DocsPage() {
             </ul>
           </Section>
 
+          <Section id="extend" title="Adding a new pair">
+            <P>Vesper sources pairs as a <B>hybrid</B>: the onchain Wrappers Registry is the primary source of truth, and a local config lets you add custom or dev-only pairs on top.</P>
+            <Cards items={[
+              { icon: "①", title: "Onchain", desc: "Every valid pair from the registry contract is rendered live — metadata read straight from chain." },
+              { icon: "②", title: "Local config", desc: "LOCAL_PAIRS adds pairs not yet onchain. Merged on top; onchain always wins on conflicts." },
+              { icon: "③", title: "Fallback", desc: "If the RPC read fails, the 8 official pairs plus your local ones still render." },
+            ]} />
+
+            <P><B>Option A — already onchain:</B> nothing to do. If the pair is registered in the official Wrappers Registry, Vesper picks it up automatically on the next load.</P>
+
+            <P><B>Option B — a custom / dev-only pair:</B> append an entry to <Code>LOCAL_PAIRS</Code> in <Code>src/lib/registry.ts</Code>. Only the two addresses are required — everything else is read live from chain if omitted:</P>
+
+            <Pre>{`// src/lib/registry.ts
+export const LOCAL_PAIRS: TokenPair[] = [
+  {
+    tokenAddress: "0xYourErc20Address",               // required
+    confidentialTokenAddress: "0xYourWrapperAddress", // required
+    isValid: true,
+    symbol: "MYTKN",         // optional — falls back to onchain symbol()
+    name: "My Token",        // optional
+    decimals: 18,            // optional — falls back to onchain decimals()
+    confSymbol: "cMYTKN",    // optional
+    noFaucet: true,          // set if the ERC-20 has no public mint()
+  },
+];`}</Pre>
+
+            <Callout>Save and reload — the pair appears in the Registry, Wrap, and Decrypt tabs immediately, wired to the same flows as the official pairs.</Callout>
+          </Section>
+
           <Section id="contracts" title="Contract addresses (Sepolia)">
             <P>All contracts are deployed on Ethereum Sepolia testnet and registered by Zama. Click any address to view it on Etherscan.</P>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, fontFamily: "'JetBrains Mono', monospace" }}>
@@ -217,6 +247,12 @@ function B({ children }: { children: React.ReactNode }) {
 
 function Code({ children }: { children: React.ReactNode }) {
   return <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, background: "#1a1928", border: "1px solid #2a2938", borderRadius: 5, padding: "1px 6px", color: "#c9c3f5" }}>{children}</code>;
+}
+
+function Pre({ children }: { children: React.ReactNode }) {
+  return (
+    <pre style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, lineHeight: 1.7, background: "#13121c", border: "1px solid #1e1d2a", borderRadius: 10, padding: "16px 18px", color: "#c9c3f5", overflowX: "auto", margin: "16px 0" }}>{children}</pre>
+  );
 }
 
 function Callout({ children, type = "default" }: { children: React.ReactNode; type?: "default" | "warning" | "info" }) {
