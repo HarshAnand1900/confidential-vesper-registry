@@ -161,20 +161,6 @@ No `.env` file needed — the WalletConnect project ID is baked in for Sepolia.
 
 ---
 
-## Bounty checklist
-
-Built for **Zama Developer Program — Mainnet Season 3, Bounty Track** (deadline July 7 2026).
-
-- [x] Read the official on-chain Wrappers Registry
-- [x] List all ERC-20 ↔ ERC-7984 cTokenMock pairs
-- [x] Wrap flow (`approve` + `wrap(address, uint256)`)
-- [x] Unwrap flow (`unwrap` + relayer poll + `finalizeUnwrap`)
-- [x] EIP-712 user-decryption (`userDecrypt`)
-- [x] Arbitrary decrypt (any ERC-7984 address)
-- [x] Faucet (`mint` on underlying mock tokens)
-
----
-
 ## License
 
 MIT
