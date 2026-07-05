@@ -19,6 +19,7 @@ import {
   ERC20_MOCK_ABI,
   WRAPPER_ABI,
   FALLBACK_PAIRS,
+  LOCAL_PAIRS,
   confDecimalsOf,
   visualFor,
   formatRate,
@@ -122,11 +123,9 @@ export default function Home() {
         abi: REGISTRY_ABI,
         functionName: "getTokenConfidentialTokenPairs",
       });
-      // Only show the official Zama-registered mock pairs this app supports.
-      // Third parties can also register pairs on the shared registry contract —
-      // those aren't part of this bounty's official token set, so filter them out.
-      const known = new Set(FALLBACK_PAIRS.map((fp) => fp.tokenAddress.toLowerCase()));
-      const valid = raw.filter((p) => p.isValid && known.has(p.tokenAddress.toLowerCase()));
+      // The onchain registry is the primary source of truth — show every valid
+      // pair it returns (including ones registered by third parties).
+      const valid = raw.filter((p) => p.isValid);
 
       // Read all token metadata live from chain — nothing hardcoded except cosmetics.
       // Load metadata sequentially to avoid rate-limiting the public RPC (40 parallel calls = drops).
@@ -168,13 +167,24 @@ export default function Home() {
         });
       }
 
-      setPairs(enriched.length ? enriched : FALLBACK_PAIRS);
+      // Hybrid registry: merge local/custom pairs on top of the onchain source of
+      // truth. A local pair already present onchain is skipped (onchain wins), so
+      // this only ever adds dev-only / not-yet-registered pairs.
+      const onchainConf = new Set(enriched.map((p) => idOf(p)));
+      const localExtras = LOCAL_PAIRS.filter((p) => !onchainConf.has(idOf(p)));
+      const merged = [...enriched, ...localExtras];
+
+      setPairs(merged.length ? merged : FALLBACK_PAIRS);
       setRegistrySource(enriched.length ? "onchain" : "local fallback");
-      if (enriched.length) setWrapPairId((cur) => cur || idOf(enriched[0]));
+      if (merged.length) setWrapPairId((cur) => cur || idOf(merged[0]));
     } catch {
-      setPairs(FALLBACK_PAIRS);
+      // Onchain read failed entirely — fall back to the local declared pairs.
+      const fallback = [...FALLBACK_PAIRS, ...LOCAL_PAIRS.filter(
+        (lp) => !FALLBACK_PAIRS.some((fp) => idOf(fp) === idOf(lp))
+      )];
+      setPairs(fallback);
       setRegistrySource("local fallback");
-      setWrapPairId((cur) => cur || idOf(FALLBACK_PAIRS[0]));
+      setWrapPairId((cur) => cur || idOf(fallback[0]));
     }
   }, [publicClient]);
 

@@ -211,3 +211,34 @@ export const FALLBACK_PAIRS: TokenPair[] = [
     dotColor: "linear-gradient(135deg,#159E6E,#46d6a0)",
   },
 ];
+
+/**
+ * LOCAL / CUSTOM PAIRS — the app's extension point.
+ *
+ * The onchain Wrappers Registry is the primary source of truth. This array lets
+ * you declare *additional* pairs that live in your local config: dev-only pairs,
+ * pairs not yet registered onchain, or wrappers you deploy yourself.
+ *
+ * At runtime these are MERGED on top of the onchain results — a local pair whose
+ * confidentialTokenAddress is already onchain is skipped (onchain wins), so this
+ * only ever *adds* pairs, never overrides the canonical registry.
+ *
+ * To add a pair, append an entry below. `symbol`/`name`/`decimals` etc. are
+ * optional — anything omitted is read live from the token contracts on chain.
+ *
+ * Example:
+ *   {
+ *     tokenAddress: "0xYourErc20Address",
+ *     confidentialTokenAddress: "0xYourErc7984WrapperAddress",
+ *     isValid: true,
+ *     symbol: "MYTKN",            // optional — falls back to onchain symbol()
+ *     name: "My Token",           // optional
+ *     decimals: 18,               // optional — falls back to onchain decimals()
+ *     confSymbol: "cMYTKN",       // optional
+ *     confName: "Confidential My Token",
+ *     noFaucet: true,             // set if the ERC-20 has no public mint()
+ *   }
+ */
+export const LOCAL_PAIRS: TokenPair[] = [
+  // Add your custom / dev-only ERC-20 ↔ ERC-7984 pairs here.
+];

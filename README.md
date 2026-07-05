@@ -77,6 +77,55 @@ All pairs registered by Zama at [`0x2f0750Bbb0A246059d80e94c454586a7F27a128e`](h
 
 ---
 
+## How the registry is sourced (hybrid)
+
+Vesper sources pairs from two places and merges them:
+
+1. **Onchain registry — primary source of truth.** On load, the app calls
+   `getTokenConfidentialTokenPairs()` on the official Wrappers Registry
+   (`0x2f0750…128e`) and renders **every** valid pair it returns. Token metadata
+   (symbol, name, decimals, rate) is read live from each token contract — nothing
+   about the pair set is hardcoded. If a third party registers a new pair on that
+   contract, it appears in Vesper automatically on the next load.
+2. **Local config — additive extension.** `LOCAL_PAIRS` in
+   [`src/lib/registry.ts`](src/lib/registry.ts) lets you declare custom or
+   dev-only pairs that aren't onchain yet. These are merged **on top of** the
+   onchain results (onchain wins on conflicts), so local config only ever *adds*.
+3. **Fallback.** If the onchain read fails entirely (RPC down), the app renders
+   `FALLBACK_PAIRS` (the 8 official pairs, hardcoded) plus any `LOCAL_PAIRS`, so
+   the UI is never empty.
+
+## Adding a new ERC-20 ↔ ERC-7984 pair
+
+**Option A — it's already onchain:** nothing to do. If the pair is registered in
+the official Wrappers Registry, Vesper picks it up automatically — just reload.
+
+**Option B — a custom / dev-only pair (local config):** append an entry to
+`LOCAL_PAIRS` in [`src/lib/registry.ts`](src/lib/registry.ts). Only the two
+addresses are required — everything else is read live from chain if omitted:
+
+```ts
+// src/lib/registry.ts
+export const LOCAL_PAIRS: TokenPair[] = [
+  {
+    tokenAddress: "0xYourErc20Address",              // required
+    confidentialTokenAddress: "0xYourWrapperAddress", // required
+    isValid: true,
+    symbol: "MYTKN",                    // optional — falls back to onchain symbol()
+    name: "My Token",                   // optional
+    decimals: 18,                       // optional — falls back to onchain decimals()
+    confSymbol: "cMYTKN",               // optional
+    confName: "Confidential My Token",  // optional
+    noFaucet: true,                     // set if the ERC-20 has no public mint()
+  },
+];
+```
+
+Save and reload — the pair shows up in the Registry, Wrap, and Decrypt tabs
+immediately, wired to the same wrap/unwrap/decrypt flows as the official pairs.
+
+---
+
 ## Tech Stack
 
 | Layer | Choice |
