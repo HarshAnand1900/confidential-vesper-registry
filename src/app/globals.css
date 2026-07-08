@@ -40,6 +40,7 @@ body {
 @keyframes sheen { from { background-position: -200% 0; } to { background-position: 200% 0; } }
 @keyframes sharpen { from { filter: blur(9px); opacity: .4; letter-spacing: 2px; } to { filter: blur(0); opacity: 1; letter-spacing: 0; } }
 @keyframes glowpulse { 0%, 100% { box-shadow: 0 0 0 0 var(--violet-dim); } 50% { box-shadow: 0 0 0 8px transparent; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .vesper-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
 .vesper-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 20px; border: 3px solid transparent; background-clip: padding-box; }

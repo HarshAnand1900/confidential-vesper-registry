@@ -100,9 +100,16 @@ Vesper sources pairs from two places and merges them:
 **Option A — it's already onchain:** nothing to do. If the pair is registered in
 the official Wrappers Registry, Vesper picks it up automatically — just reload.
 
-**Option B — a custom / dev-only pair (local config):** append an entry to
-`LOCAL_PAIRS` in [`src/lib/registry.ts`](src/lib/registry.ts). Only the two
-addresses are required — everything else is read live from chain if omitted:
+**Option B — add it in the app (no code):** click **＋ Add pair** on the Registry
+tab, paste the ERC-20 and its ERC-7984 wrapper address, and hit Validate. Vesper
+reads the metadata live from Sepolia, previews it, and adds it — persisted in the
+browser (`localStorage`) and marked with a **Custom** badge, with a one-click
+remove. Best for quickly trying a wrapper you just deployed.
+
+**Option C — a persistent / shipped pair (local config):** append an entry to
+`LOCAL_PAIRS` in [`src/lib/registry.ts`](src/lib/registry.ts) to bake a pair into
+the app for everyone. Only the two addresses are required — everything else is
+read live from chain if omitted:
 
 ```ts
 // src/lib/registry.ts

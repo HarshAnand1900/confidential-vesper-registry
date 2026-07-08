@@ -84,6 +84,15 @@ export default function Home() {
   const [registrySource, setRegistrySource] = useState<"onchain" | "local fallback">("local fallback");
   const [erc20Bal, setErc20Bal] = useState<Record<string, bigint>>({});
 
+  // User-added custom pairs (persisted to localStorage), merged on top of the registry.
+  const [userPairs, setUserPairs] = useState<TokenPair[]>([]);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addErc20, setAddErc20] = useState("");
+  const [addConf, setAddConf] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
+  const [addPreview, setAddPreview] = useState<TokenPair | null>(null);
+  const [addError, setAddError] = useState("");
+
   const [decrypted, setDecrypted] = useState<Record<string, boolean>>({});
   const [decrypting, setDecrypting] = useState<Record<string, boolean>>({});
   const [decryptedVal, setDecryptedVal] = useState<Record<string, number>>({});
@@ -112,7 +121,40 @@ export default function Home() {
     }, 3600);
   }, []);
 
-  const byId = useCallback((id: string) => pairs.find((p) => idOf(p) === id), [pairs]);
+  // Registry (onchain + fallback) with the user's custom pairs merged on top.
+  // A custom pair already present in the registry is skipped (registry wins).
+  const allPairs = useMemo(() => {
+    const ids = new Set(pairs.map(idOf));
+    return [...pairs, ...userPairs.filter((p) => !ids.has(idOf(p)))];
+  }, [pairs, userPairs]);
+
+  const byId = useCallback((id: string) => allPairs.find((p) => idOf(p) === id), [allPairs]);
+
+  // Load persisted custom pairs once on mount (rate is stored as a string — revive to bigint).
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("vesper.userPairs");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as (Omit<TokenPair, "rate"> & { rate?: string })[];
+      setUserPairs(
+        parsed.map((p) => ({ ...p, rate: p.rate ? BigInt(p.rate) : undefined, custom: true }))
+      );
+    } catch {
+      /* ignore malformed storage */
+    }
+  }, []);
+
+  const persistUserPairs = useCallback((next: TokenPair[]) => {
+    setUserPairs(next);
+    try {
+      localStorage.setItem(
+        "vesper.userPairs",
+        JSON.stringify(next.map((p) => ({ ...p, rate: p.rate?.toString() })))
+      );
+    } catch {
+      /* storage unavailable — pairs still live for this session */
+    }
+  }, []);
 
   // ---------- load registry ----------
   const loadPairs = useCallback(async () => {
@@ -192,9 +234,9 @@ export default function Home() {
   }, [publicClient]);
 
   const loadBalances = useCallback(async () => {
-    if (!publicClient || !address || pairs.length === 0) return;
+    if (!publicClient || !address || allPairs.length === 0) return;
     const res = await Promise.allSettled(
-      pairs.map(async (p) => {
+      allPairs.map(async (p) => {
         const bal = await publicClient.readContract({
           address: p.tokenAddress, abi: ERC20_ABI, functionName: "balanceOf", args: [address],
         });
@@ -204,7 +246,7 @@ export default function Home() {
     const next: Record<string, bigint> = {};
     for (const r of res) if (r.status === "fulfilled") next[r.value[0]] = r.value[1];
     setErc20Bal(next);
-  }, [publicClient, address, pairs]);
+  }, [publicClient, address, allPairs]);
 
   useEffect(() => {
     loadPairs();
@@ -531,8 +573,100 @@ export default function Home() {
     }
   };
 
+  // ---------- add / remove custom pair ----------
+  const readMeta = useCallback(
+    (addr: `0x${string}`, abi: typeof ERC20_ABI | typeof WRAPPER_ABI, fn: string) =>
+      publicClient
+        ? publicClient.readContract({ address: addr, abi: abi as typeof ERC20_ABI, functionName: fn } as Parameters<typeof publicClient.readContract>[0]).catch(() => undefined)
+        : Promise.resolve(undefined),
+    [publicClient]
+  );
+
+  // Read metadata for a pasted pair and show a preview before committing.
+  const previewAddPair = async () => {
+    setAddError("");
+    setAddPreview(null);
+    const erc20 = addErc20.trim();
+    const conf = addConf.trim();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(erc20) || !/^0x[0-9a-fA-F]{40}$/.test(conf)) {
+      setAddError("Both fields must be valid 0x… addresses.");
+      return;
+    }
+    if (erc20.toLowerCase() === conf.toLowerCase()) {
+      setAddError("The ERC-20 and ERC-7984 addresses must differ.");
+      return;
+    }
+    if (allPairs.some((p) => idOf(p) === conf.toLowerCase())) {
+      setAddError("That pair is already in the registry.");
+      return;
+    }
+    if (!publicClient) return;
+    setAddBusy(true);
+    try {
+      const [symbol, name, decimals, confSymbol, confName, rate, underlying] = await Promise.all([
+        readMeta(erc20 as `0x${string}`, ERC20_ABI, "symbol"),
+        readMeta(erc20 as `0x${string}`, ERC20_ABI, "name"),
+        readMeta(erc20 as `0x${string}`, ERC20_ABI, "decimals"),
+        readMeta(conf as `0x${string}`, WRAPPER_ABI, "symbol"),
+        readMeta(conf as `0x${string}`, WRAPPER_ABI, "name"),
+        readMeta(conf as `0x${string}`, WRAPPER_ABI, "rate"),
+        readMeta(conf as `0x${string}`, WRAPPER_ABI, "underlying"),
+      ]);
+      // The confidential address must actually be an ERC-7984 wrapper.
+      if (confSymbol === undefined && rate === undefined) {
+        setAddError("The second address doesn't look like an ERC-7984 wrapper (no symbol/rate).");
+        return;
+      }
+      // If the wrapper exposes underlying(), it must match the ERC-20 given.
+      if (typeof underlying === "string" && underlying.toLowerCase() !== erc20.toLowerCase()) {
+        setAddError("This wrapper's underlying() doesn't match the ERC-20 address you entered.");
+        return;
+      }
+      const dec = Number((decimals as number | undefined) ?? 18);
+      const sym = symbol as string | undefined;
+      const vis = visualFor(erc20, sym);
+      setAddPreview({
+        tokenAddress: erc20 as `0x${string}`,
+        confidentialTokenAddress: conf as `0x${string}`,
+        isValid: true,
+        symbol: sym ?? "TKN",
+        name: (name as string | undefined) ?? "Custom token",
+        decimals: dec,
+        confSymbol: (confSymbol as string | undefined) ?? `c${sym ?? "TKN"}`,
+        confName: (confName as string | undefined) ?? "Confidential token",
+        confDecimals: confDecimalsOf(dec),
+        rate: rate as bigint | undefined,
+        official: false,
+        custom: true,
+        glyph: vis.glyph,
+        dotColor: vis.dotColor,
+      });
+    } catch {
+      setAddError("Couldn't read token metadata — check both addresses on Sepolia.");
+    } finally {
+      setAddBusy(false);
+    }
+  };
+
+  const commitAddPair = () => {
+    if (!addPreview) return;
+    persistUserPairs([...userPairs, addPreview]);
+    setAddOpen(false);
+    setAddErc20("");
+    setAddConf("");
+    setAddPreview(null);
+    setAddError("");
+    showToast("＋", "var(--violet)", "Pair added", `${addPreview.confSymbol} · saved to this browser`);
+    loadBalances();
+  };
+
+  const removePair = (id: string) => {
+    persistUserPairs(userPairs.filter((p) => idOf(p) !== id));
+    showToast("✕", "var(--muted)", "Pair removed", "Custom pair deleted from this browser");
+  };
+
   // ---------- derived ----------
-  const wrapPair = byId(wrapPairId) ?? pairs[0];
+  const wrapPair = byId(wrapPairId) ?? allPairs[0];
   const isWrap = wrapMode === "wrap";
   const fromSym = wrapPair ? (isWrap ? wrapPair.symbol : wrapPair.confSymbol) : "";
   const toSym = wrapPair ? (isWrap ? wrapPair.confSymbol : wrapPair.symbol) : "";
@@ -547,7 +681,7 @@ export default function Home() {
     () => Object.keys(decryptedVal).filter((k) => decryptedVal[k] > 0).length,
     [decryptedVal]
   );
-  const officialCount = useMemo(() => pairs.filter((p) => p.official).length, [pairs]);
+  const officialCount = useMemo(() => allPairs.filter((p) => p.official).length, [allPairs]);
 
   const shortAddr = address ? short(address) : "";
   const [walletOpen, setWalletOpen] = useState(false);
@@ -762,21 +896,24 @@ export default function Home() {
                     <h1 style={{ fontFamily: "'Space Grotesk'", fontWeight: 700, fontSize: 32, letterSpacing: "-.02em", marginBottom: 6 }}>Wrapper registry</h1>
                     <p style={{ color: "var(--muted)", fontSize: 15, maxWidth: "56ch" }}>Sourced live from the onchain Zama Wrappers Registry on Sepolia, extended with local dev pairs. Each pair maps a public ERC-20 to its confidential ERC-7984 twin.</p>
                   </div>
-                  <div style={{ display: "flex", gap: 4, padding: 4, borderRadius: 11, background: "var(--surface)", border: "1px solid var(--border)" }}>
-                    <button onClick={() => setViewMode("cards")} style={{ padding: "8px 13px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "'Instrument Sans'", color: viewMode === "cards" ? "var(--text)" : "var(--muted)", background: viewMode === "cards" ? "var(--surface2)" : "transparent", transition: "all .2s" }}>▦ Cards</button>
-                    <button onClick={() => setViewMode("table")} style={{ padding: "8px 13px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "'Instrument Sans'", color: viewMode === "table" ? "var(--text)" : "var(--muted)", background: viewMode === "table" ? "var(--surface2)" : "transparent", transition: "all .2s" }}>≣ Table</button>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <button onClick={() => { setAddOpen(true); setAddError(""); setAddPreview(null); }} className="vesper-hover-border" style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 15px", borderRadius: 11, cursor: "pointer", border: "1px solid var(--border2)", background: "var(--surface)", color: "var(--text)", fontSize: 13, fontWeight: 600, fontFamily: "'Instrument Sans'", transition: "all .2s" }}>＋ Add pair</button>
+                    <div style={{ display: "flex", gap: 4, padding: 4, borderRadius: 11, background: "var(--surface)", border: "1px solid var(--border)" }}>
+                      <button onClick={() => setViewMode("cards")} style={{ padding: "8px 13px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "'Instrument Sans'", color: viewMode === "cards" ? "var(--text)" : "var(--muted)", background: viewMode === "cards" ? "var(--surface2)" : "transparent", transition: "all .2s" }}>▦ Cards</button>
+                      <button onClick={() => setViewMode("table")} style={{ padding: "8px 13px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "'Instrument Sans'", color: viewMode === "table" ? "var(--text)" : "var(--muted)", background: viewMode === "table" ? "var(--surface2)" : "transparent", transition: "all .2s" }}>≣ Table</button>
+                    </div>
                   </div>
                 </div>
 
                 <div style={{ display: "flex", gap: 12, marginBottom: 26, flexWrap: "wrap" }}>
-                  <div style={{ flex: 1, minWidth: 150, padding: "16px 18px", borderRadius: 16, background: "var(--surface)", border: "1px solid var(--border)" }}><div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 7 }}>Official pairs</div><div style={{ fontFamily: "'Space Grotesk'", fontWeight: 600, fontSize: 26, display: "flex", alignItems: "baseline", gap: 8 }}>{officialCount}{pairs.length > officialCount && <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>+{pairs.length - officialCount} community</span>}</div></div>
+                  <div style={{ flex: 1, minWidth: 150, padding: "16px 18px", borderRadius: 16, background: "var(--surface)", border: "1px solid var(--border)" }}><div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 7 }}>Official pairs</div><div style={{ fontFamily: "'Space Grotesk'", fontWeight: 600, fontSize: 26, display: "flex", alignItems: "baseline", gap: 8 }}>{officialCount}{allPairs.length > officialCount && <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>+{allPairs.length - officialCount} more</span>}</div></div>
                   <div style={{ flex: 1, minWidth: 150, padding: "16px 18px", borderRadius: 16, background: "var(--surface)", border: "1px solid var(--border)" }}><div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 7 }}>Your revealed tokens</div><div style={{ fontFamily: "'Space Grotesk'", fontWeight: 600, fontSize: 26, display: "flex", alignItems: "center", gap: 8 }}>{wrappedCount}<span style={{ fontSize: 13, color: "var(--violet)", fontWeight: 500 }}>confidential</span></div></div>
                   <div style={{ flex: 1, minWidth: 150, padding: "16px 18px", borderRadius: 16, background: "var(--surface)", border: "1px solid var(--border)" }}><div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 7 }}>Registry source</div><div style={{ fontFamily: "'JetBrains Mono'", fontWeight: 500, fontSize: 13, color: "var(--text)", marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--good)" }} />{registrySource}</div></div>
                 </div>
 
                 {viewMode === "cards" && (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(330px,1fr))", gap: 14 }}>
-                    {pairs.map((p) => {
+                    {allPairs.map((p) => {
                       const id = idOf(p);
                       const isDec = !!decrypted[id];
                       const isDecing = !!decrypting[id];
@@ -789,7 +926,7 @@ export default function Home() {
                               <TokenIcon symbol={p.symbol} size={42} radius={13} />
                               <div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "'Space Grotesk'", fontWeight: 600, fontSize: 16 }}>{p.confSymbol}<span style={{ fontSize: 11, color: "var(--violet)", background: "var(--violet-dim)", padding: "2px 7px", borderRadius: 6, fontFamily: "'Instrument Sans'", fontWeight: 600 }}>ERC-7984</span></div>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--muted)" }}>{p.name}{p.official ? <span title="Official Zama cTokenMock" style={{ fontSize: 10.5, color: "var(--accent-ink)", background: "var(--accent)", padding: "1px 6px", borderRadius: 5, fontFamily: "'Instrument Sans'", fontWeight: 700 }}>✓ Official</span> : <span title="Third-party pair registered onchain — not part of Zama's official set" style={{ fontSize: 10.5, color: "var(--muted)", background: "var(--surface2)", border: "1px solid var(--border)", padding: "1px 6px", borderRadius: 5, fontFamily: "'Instrument Sans'", fontWeight: 600 }}>Community</span>}</div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--muted)" }}>{p.name}{p.official ? <span title="Official Zama cTokenMock" style={{ fontSize: 10.5, color: "var(--accent-ink)", background: "var(--accent)", padding: "1px 6px", borderRadius: 5, fontFamily: "'Instrument Sans'", fontWeight: 700 }}>✓ Official</span> : p.custom ? <span title="Custom pair you added — saved in this browser" style={{ fontSize: 10.5, color: "var(--violet)", background: "var(--violet-dim)", padding: "1px 6px", borderRadius: 5, fontFamily: "'Instrument Sans'", fontWeight: 700 }}>Custom</span> : <span title="Third-party pair registered onchain — not part of Zama's official set" style={{ fontSize: 10.5, color: "var(--muted)", background: "var(--surface2)", border: "1px solid var(--border)", padding: "1px 6px", borderRadius: 5, fontFamily: "'Instrument Sans'", fontWeight: 600 }}>Community</span>}{p.custom && <button onClick={() => removePair(idOf(p))} title="Remove custom pair" style={{ marginLeft: 2, padding: "0 5px", borderRadius: 5, cursor: "pointer", border: "1px solid var(--border)", background: "transparent", color: "var(--muted)", fontSize: 11, fontFamily: "'Instrument Sans'", lineHeight: 1.6 }}>✕</button>}</div>
                               </div>
                             </div>
                             <div title={`Underlying ${p.decimals} decimals → confidential ${p.confDecimals ?? confDecimalsOf(p.decimals ?? 18)} decimals. Conversion rate ${formatRate(p.rate)} (base units).`} style={{ textAlign: "right", fontFamily: "'JetBrains Mono'", lineHeight: 1.45 }}>
@@ -839,7 +976,7 @@ export default function Home() {
                     <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1.1fr 1.1fr 1.3fr", gap: 12, padding: "13px 18px", background: "var(--bg2)", fontSize: 11.5, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em", borderBottom: "1px solid var(--border)" }}>
                       <span>Token</span><span>ERC-20 balance</span><span>Confidential</span><span>Addresses</span><span style={{ textAlign: "right" }}>Actions</span>
                     </div>
-                    {pairs.map((p) => {
+                    {allPairs.map((p) => {
                       const id = idOf(p);
                       const isDec = !!decrypted[id];
                       const isDecing = !!decrypting[id];
@@ -894,7 +1031,7 @@ export default function Home() {
                 <div style={{ padding: 22, borderRadius: 20, background: "var(--surface)", border: "1px solid var(--border)" }}>
                   <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 10, fontWeight: 500 }}>Select token</div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
-                    {pairs.map((p) => {
+                    {allPairs.map((p) => {
                       const id = idOf(p);
                       const sel = wrapPairId === id;
                       return (
@@ -982,7 +1119,7 @@ export default function Home() {
                   </div>
                   <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 12, color: "var(--faint)", alignSelf: "center" }}>Quick fill:</span>
-                    {pairs.slice(0, 4).map((p) => (
+                    {allPairs.slice(0, 4).map((p) => (
                       <button key={idOf(p)} onClick={() => { setArbAddr(p.confidentialTokenAddress); setArbResult(null); }} className="vesper-hover-border" style={{ padding: "5px 10px", borderRadius: 7, cursor: "pointer", border: "1px solid var(--border)", background: "var(--bg2)", color: "var(--muted)", fontSize: 11.5, fontFamily: "'JetBrains Mono'" }}>{p.confSymbol}</button>
                     ))}
                   </div>
@@ -1011,7 +1148,7 @@ export default function Home() {
                 <h1 style={{ fontFamily: "'Space Grotesk'", fontWeight: 700, fontSize: 32, letterSpacing: "-.02em", marginBottom: 6, textAlign: "center" }}>Sepolia faucet</h1>
                 <p style={{ color: "var(--muted)", fontSize: 15, textAlign: "center", marginBottom: 26 }}>Claim the official cTokenMock test tokens from the Sepolia Wrappers Registry, then wrap them into their confidential form.</p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 13 }}>
-                  {pairs.filter(p => !p.noFaucet).map((p) => {
+                  {allPairs.filter(p => !p.noFaucet).map((p) => {
                     const id = idOf(p);
                     const fBusy = !!faucetBusy[id];
                     const fDone = !!faucetDone[id];
@@ -1039,6 +1176,49 @@ export default function Home() {
               </div>
             )}
           </main>
+        </div>
+      )}
+
+      {/* add-pair modal */}
+      {addOpen && (
+        <div onClick={() => !addBusy && setAddOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 70, background: "oklch(0 0 0 / .55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, animation: "fadeIn .2s ease both" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, padding: 24, borderRadius: 20, background: "var(--surface)", border: "1px solid var(--border2)", boxShadow: "0 24px 70px oklch(0 0 0 / .5)", animation: "popIn .3s ease both" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <h2 style={{ fontFamily: "'Space Grotesk'", fontWeight: 700, fontSize: 20, letterSpacing: "-.02em" }}>Add a custom pair</h2>
+              <button onClick={() => !addBusy && setAddOpen(false)} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: 18, lineHeight: 1 }}>✕</button>
+            </div>
+            <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 18, lineHeight: 1.6 }}>Paste an ERC-20 and its ERC-7984 wrapper. Metadata is read live from Sepolia. Saved in this browser and wired to the same wrap / unwrap / decrypt flows.</p>
+
+            <label style={{ display: "block", fontSize: 12, color: "var(--muted)", fontWeight: 500, marginBottom: 6 }}>ERC-20 (underlying) address</label>
+            <input value={addErc20} onChange={(e) => { setAddErc20(e.target.value); setAddPreview(null); setAddError(""); }} placeholder="0x…" className="vesper-focus-violet" style={{ width: "100%", padding: "11px 13px", borderRadius: 11, background: "var(--bg2)", border: "1px solid var(--border)", outline: "none", fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: "var(--text)", marginBottom: 12 }} />
+
+            <label style={{ display: "block", fontSize: 12, color: "var(--muted)", fontWeight: 500, marginBottom: 6 }}>ERC-7984 (confidential wrapper) address</label>
+            <input value={addConf} onChange={(e) => { setAddConf(e.target.value); setAddPreview(null); setAddError(""); }} placeholder="0x…" className="vesper-focus-violet" style={{ width: "100%", padding: "11px 13px", borderRadius: 11, background: "var(--bg2)", border: "1px solid var(--border)", outline: "none", fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: "var(--text)", marginBottom: 14 }} />
+
+            {addError && <div style={{ padding: "10px 13px", borderRadius: 10, background: "color-mix(in oklch, var(--bad) 12%, transparent)", border: "1px solid color-mix(in oklch, var(--bad) 30%, transparent)", color: "var(--bad)", fontSize: 12.5, marginBottom: 14, lineHeight: 1.5 }}>{addError}</div>}
+
+            {addPreview && (
+              <div style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, borderRadius: 14, background: "var(--violet-dim)", border: "1px solid color-mix(in oklch, var(--violet) 25%, transparent)", marginBottom: 16, animation: "popIn .3s ease both" }}>
+                <TokenIcon symbol={addPreview.symbol} size={38} radius={11} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: "'Space Grotesk'", fontWeight: 600, fontSize: 15 }}>{addPreview.confSymbol}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>{addPreview.name} · {addPreview.decimals}→{addPreview.confDecimals} dec · rate {formatRate(addPreview.rate)}</div>
+                </div>
+                <span style={{ fontSize: 11, color: "var(--good)", fontWeight: 600 }}>✓ valid</span>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10 }}>
+              {!addPreview ? (
+                <button onClick={previewAddPair} disabled={addBusy || !addErc20.trim() || !addConf.trim()} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", cursor: addBusy ? "default" : "pointer", fontFamily: "'Instrument Sans'", fontWeight: 600, fontSize: 14, color: "#fff", background: "var(--violet)", opacity: addBusy || !addErc20.trim() || !addConf.trim() ? 0.55 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  {addBusy ? <><span style={{ width: 14, height: 14, border: "2px solid #fff", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin .7s linear infinite" }} />Reading…</> : "Validate"}
+                </button>
+              ) : (
+                <button onClick={commitAddPair} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "'Instrument Sans'", fontWeight: 600, fontSize: 14, color: accentInk, background: "var(--accent)" }}>Add to registry</button>
+              )}
+              <button onClick={() => !addBusy && setAddOpen(false)} style={{ padding: "13px 18px", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontFamily: "'Instrument Sans'", fontWeight: 600, fontSize: 14 }}>Cancel</button>
+            </div>
+          </div>
         </div>
       )}
 

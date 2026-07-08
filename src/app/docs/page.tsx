@@ -162,7 +162,9 @@ export default function DocsPage() {
 
             <P><B>Option A — already onchain:</B> nothing to do. If the pair is registered in the official Wrappers Registry, Vesper picks it up automatically on the next load.</P>
 
-            <P><B>Option B — a custom / dev-only pair:</B> append an entry to <Code>LOCAL_PAIRS</Code> in <Code>src/lib/registry.ts</Code>. Only the two addresses are required — everything else is read live from chain if omitted:</P>
+            <P><B>Option B — add it in the app (no code):</B> click <B>＋ Add pair</B> on the Registry tab, paste the ERC-20 and its ERC-7984 wrapper address, and hit Validate. Vesper reads the metadata live from Sepolia, shows a preview, and adds it — saved in your browser (localStorage) and marked with a <B>Custom</B> badge. Great for quickly trying a wrapper you just deployed.</P>
+
+            <P><B>Option C — a persistent / shipped pair (config):</B> append an entry to <Code>LOCAL_PAIRS</Code> in <Code>src/lib/registry.ts</Code>. Use this to bake a pair into the app for everyone. Only the two addresses are required — everything else is read live from chain if omitted:</P>
 
             <Pre>{`// src/lib/registry.ts
 export const LOCAL_PAIRS: TokenPair[] = [
