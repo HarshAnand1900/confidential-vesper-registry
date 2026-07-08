@@ -145,7 +145,7 @@ immediately, wired to the same wrap/unwrap/decrypt flows as the official pairs.
 | Layer | Choice |
 |---|---|
 | Framework | Next.js 15 (App Router) |
-| FHE SDK | `@zama-ai/relayer-sdk` |
+| FHE SDK | `@zama-fhe/relayer-sdk` |
 | Wallet | RainbowKit v2 + wagmi v2 |
 | Chain reads/writes | viem |
 | Deploy | Vercel |

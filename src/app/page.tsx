@@ -603,7 +603,7 @@ export default function Home() {
     if (!publicClient) return;
     setAddBusy(true);
     try {
-      const [symbol, name, decimals, confSymbol, confName, rate, underlying] = await Promise.all([
+      const [symbol, name, decimals, confSymbol, confName, rate, underlying, confBalProbe] = await Promise.all([
         readMeta(erc20 as `0x${string}`, ERC20_ABI, "symbol"),
         readMeta(erc20 as `0x${string}`, ERC20_ABI, "name"),
         readMeta(erc20 as `0x${string}`, ERC20_ABI, "decimals"),
@@ -611,10 +611,23 @@ export default function Home() {
         readMeta(conf as `0x${string}`, WRAPPER_ABI, "name"),
         readMeta(conf as `0x${string}`, WRAPPER_ABI, "rate"),
         readMeta(conf as `0x${string}`, WRAPPER_ABI, "underlying"),
+        // ERC-7984-specific probe: a plain ERC-20 has symbol() too, but not
+        // confidentialBalanceOf(address) returning a bytes32 ciphertext handle.
+        publicClient
+          .readContract({
+            address: conf as `0x${string}`, abi: WRAPPER_ABI,
+            functionName: "confidentialBalanceOf",
+            args: ["0x0000000000000000000000000000000000000000"],
+          })
+          .catch(() => undefined),
       ]);
       // The confidential address must actually be an ERC-7984 wrapper.
-      if (confSymbol === undefined && rate === undefined) {
-        setAddError("The second address doesn't look like an ERC-7984 wrapper (no symbol/rate).");
+      if (confBalProbe === undefined) {
+        setAddError("The second address doesn't implement ERC-7984 (no confidentialBalanceOf).");
+        return;
+      }
+      if (rate === undefined && underlying === undefined) {
+        setAddError("The second address doesn't look like an ERC-20 wrapper (no rate/underlying).");
         return;
       }
       // If the wrapper exposes underlying(), it must match the ERC-20 given.
@@ -1148,7 +1161,9 @@ export default function Home() {
                 <h1 style={{ fontFamily: "'Space Grotesk'", fontWeight: 700, fontSize: 32, letterSpacing: "-.02em", marginBottom: 6, textAlign: "center" }}>Sepolia faucet</h1>
                 <p style={{ color: "var(--muted)", fontSize: 15, textAlign: "center", marginBottom: 26 }}>Claim the official cTokenMock test tokens from the Sepolia Wrappers Registry, then wrap them into their confidential form.</p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 13 }}>
-                  {allPairs.filter(p => !p.noFaucet).map((p) => {
+                  {/* Faucet is only for the official cTokenMocks — community/custom
+                      pairs have no guaranteed public mint(), so they're excluded. */}
+                  {allPairs.filter(p => p.official && !p.noFaucet).map((p) => {
                     const id = idOf(p);
                     const fBusy = !!faucetBusy[id];
                     const fDone = !!faucetDone[id];
