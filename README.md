@@ -175,6 +175,14 @@ No `.env` file needed — the WalletConnect project ID is baked in for Sepolia.
 
 ---
 
+## Roadmap
+
+- **Confidential transfers** — send/receive ERC-7984 tokens peer-to-peer via `confidentialTransfer`, with encrypted amounts and recipient ACL setup
+- **Balance history** — a private, locally-decrypted activity log of your wraps, unwraps, and transfers
+- **Community-verified pairs** — an opt-in shared registry so useful third-party pairs can be surfaced as trusted, not just "Community"
+
+---
+
 ## License
 
 MIT
