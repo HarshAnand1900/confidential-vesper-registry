@@ -18,6 +18,7 @@ Vesper is a front-end for Zama's official **Confidential Wrapper Registry** depl
 - **Decrypt** your confidential balance with an EIP-712 wallet signature — no transaction, nothing revealed publicly
 - **Arbitrary decrypt** — paste any ERC-7984 contract address to reveal your balance in it
 - **Faucet** — mint 1,000 test tokens of any pair in one click
+- **Add pair** — register a custom ERC-20 ↔ ERC-7984 pair in-app, no code needed
 
 All balance data is read live from chain. Nothing is simulated by the front-end.
 
@@ -91,9 +92,15 @@ Vesper sources pairs from two places and merges them:
    [`src/lib/registry.ts`](src/lib/registry.ts) lets you declare custom or
    dev-only pairs that aren't onchain yet. These are merged **on top of** the
    onchain results (onchain wins on conflicts), so local config only ever *adds*.
-3. **Fallback.** If the onchain read fails entirely (RPC down), the app renders
+3. **In-app custom pairs.** Pairs added via the **＋ Add pair** button are stored
+   in the browser (`localStorage`) and merged the same way — registry wins on
+   conflicts. They carry a **Custom** badge and can be removed with one click.
+4. **Fallback.** If the onchain read fails entirely (RPC down), the app renders
    `FALLBACK_PAIRS` (the 8 official pairs, hardcoded) plus any `LOCAL_PAIRS`, so
    the UI is never empty.
+
+Every pair is badged: **✓ Official** (the 8 Zama cTokenMocks), **Community**
+(third-party onchain registrations), or **Custom** (added in-app).
 
 ## Adding a new ERC-20 ↔ ERC-7984 pair
 

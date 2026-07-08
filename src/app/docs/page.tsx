@@ -71,6 +71,7 @@ export default function DocsPage() {
               <li><B>Decimals → conf decimals</B> — e.g. WETH is 18-decimal but cWETH is 6-decimal (capped by the wrapper)</li>
               <li><B>Rate</B> — the base-unit conversion factor (e.g. rate 10^12 means 1 WETH = 10^12 base units of underlying, but still 1 cWETH)</li>
             </ul>
+            <P>Every pair carries a badge: <B>✓ Official</B> for the 8 canonical Zama cTokenMocks, <B>Community</B> for third-party pairs registered onchain, and <B>Custom</B> for pairs you add in-app.</P>
             <Callout>Switch between <B>Cards</B> and <B>Table</B> view using the toggle in the top right of the registry tab.</Callout>
           </Section>
 
@@ -153,11 +154,12 @@ export default function DocsPage() {
           </Section>
 
           <Section id="extend" title="Adding a new pair">
-            <P>Vesper sources pairs as a <B>hybrid</B>: the onchain Wrappers Registry is the primary source of truth, and a local config lets you add custom or dev-only pairs on top.</P>
+            <P>Vesper sources pairs as a <B>hybrid</B>: the onchain Wrappers Registry is the primary source of truth, extended by an in-app add flow and a local config for custom or dev-only pairs.</P>
             <Cards items={[
               { icon: "①", title: "Onchain", desc: "Every valid pair from the registry contract is rendered live — metadata read straight from chain." },
-              { icon: "②", title: "Local config", desc: "LOCAL_PAIRS adds pairs not yet onchain. Merged on top; onchain always wins on conflicts." },
-              { icon: "③", title: "Fallback", desc: "If the RPC read fails, the 8 official pairs plus your local ones still render." },
+              { icon: "②", title: "In-app", desc: "＋ Add pair validates a pasted pair against chain and saves it in your browser with a Custom badge." },
+              { icon: "③", title: "Local config", desc: "LOCAL_PAIRS ships pairs with the app. Merged on top; onchain always wins on conflicts." },
+              { icon: "④", title: "Fallback", desc: "If the RPC read fails, the 8 official pairs plus your local ones still render." },
             ]} />
 
             <P><B>Option A — already onchain:</B> nothing to do. If the pair is registered in the official Wrappers Registry, Vesper picks it up automatically on the next load.</P>
