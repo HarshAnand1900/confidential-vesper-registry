@@ -162,6 +162,7 @@ export default function Home() {
           confDecimals: confDecimalsOf(dec),
           rate: rate as bigint | undefined,
           noFaucet: fallbackMatch?.noFaucet,
+          official: !!fallbackMatch,
           glyph: vis.glyph,
           dotColor: vis.dotColor,
         });
@@ -174,14 +175,16 @@ export default function Home() {
       const localExtras = LOCAL_PAIRS.filter((p) => !onchainConf.has(idOf(p)));
       const merged = [...enriched, ...localExtras];
 
-      setPairs(merged.length ? merged : FALLBACK_PAIRS);
+      const officialFallback = FALLBACK_PAIRS.map((p) => ({ ...p, official: true }));
+      setPairs(merged.length ? merged : officialFallback);
       setRegistrySource(enriched.length ? "onchain" : "local fallback");
       if (merged.length) setWrapPairId((cur) => cur || idOf(merged[0]));
     } catch {
       // Onchain read failed entirely — fall back to the local declared pairs.
-      const fallback = [...FALLBACK_PAIRS, ...LOCAL_PAIRS.filter(
-        (lp) => !FALLBACK_PAIRS.some((fp) => idOf(fp) === idOf(lp))
-      )];
+      const fallback = [
+        ...FALLBACK_PAIRS.map((p) => ({ ...p, official: true })),
+        ...LOCAL_PAIRS.filter((lp) => !FALLBACK_PAIRS.some((fp) => idOf(fp) === idOf(lp))),
+      ];
       setPairs(fallback);
       setRegistrySource("local fallback");
       setWrapPairId((cur) => cur || idOf(fallback[0]));
@@ -544,6 +547,7 @@ export default function Home() {
     () => Object.keys(decryptedVal).filter((k) => decryptedVal[k] > 0).length,
     [decryptedVal]
   );
+  const officialCount = useMemo(() => pairs.filter((p) => p.official).length, [pairs]);
 
   const shortAddr = address ? short(address) : "";
   const [walletOpen, setWalletOpen] = useState(false);
@@ -765,7 +769,7 @@ export default function Home() {
                 </div>
 
                 <div style={{ display: "flex", gap: 12, marginBottom: 26, flexWrap: "wrap" }}>
-                  <div style={{ flex: 1, minWidth: 150, padding: "16px 18px", borderRadius: 16, background: "var(--surface)", border: "1px solid var(--border)" }}><div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 7 }}>Official pairs</div><div style={{ fontFamily: "'Space Grotesk'", fontWeight: 600, fontSize: 26 }}>{pairs.length}</div></div>
+                  <div style={{ flex: 1, minWidth: 150, padding: "16px 18px", borderRadius: 16, background: "var(--surface)", border: "1px solid var(--border)" }}><div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 7 }}>Official pairs</div><div style={{ fontFamily: "'Space Grotesk'", fontWeight: 600, fontSize: 26, display: "flex", alignItems: "baseline", gap: 8 }}>{officialCount}{pairs.length > officialCount && <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>+{pairs.length - officialCount} community</span>}</div></div>
                   <div style={{ flex: 1, minWidth: 150, padding: "16px 18px", borderRadius: 16, background: "var(--surface)", border: "1px solid var(--border)" }}><div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 7 }}>Your revealed tokens</div><div style={{ fontFamily: "'Space Grotesk'", fontWeight: 600, fontSize: 26, display: "flex", alignItems: "center", gap: 8 }}>{wrappedCount}<span style={{ fontSize: 13, color: "var(--violet)", fontWeight: 500 }}>confidential</span></div></div>
                   <div style={{ flex: 1, minWidth: 150, padding: "16px 18px", borderRadius: 16, background: "var(--surface)", border: "1px solid var(--border)" }}><div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 7 }}>Registry source</div><div style={{ fontFamily: "'JetBrains Mono'", fontWeight: 500, fontSize: 13, color: "var(--text)", marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--good)" }} />{registrySource}</div></div>
                 </div>
@@ -785,7 +789,7 @@ export default function Home() {
                               <TokenIcon symbol={p.symbol} size={42} radius={13} />
                               <div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "'Space Grotesk'", fontWeight: 600, fontSize: 16 }}>{p.confSymbol}<span style={{ fontSize: 11, color: "var(--violet)", background: "var(--violet-dim)", padding: "2px 7px", borderRadius: 6, fontFamily: "'Instrument Sans'", fontWeight: 600 }}>ERC-7984</span></div>
-                                <div style={{ fontSize: 12.5, color: "var(--muted)" }}>{p.name}</div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--muted)" }}>{p.name}{p.official ? <span title="Official Zama cTokenMock" style={{ fontSize: 10.5, color: "var(--accent-ink)", background: "var(--accent)", padding: "1px 6px", borderRadius: 5, fontFamily: "'Instrument Sans'", fontWeight: 700 }}>✓ Official</span> : <span title="Third-party pair registered onchain — not part of Zama's official set" style={{ fontSize: 10.5, color: "var(--muted)", background: "var(--surface2)", border: "1px solid var(--border)", padding: "1px 6px", borderRadius: 5, fontFamily: "'Instrument Sans'", fontWeight: 600 }}>Community</span>}</div>
                               </div>
                             </div>
                             <div title={`Underlying ${p.decimals} decimals → confidential ${p.confDecimals ?? confDecimalsOf(p.decimals ?? 18)} decimals. Conversion rate ${formatRate(p.rate)} (base units).`} style={{ textAlign: "right", fontFamily: "'JetBrains Mono'", lineHeight: 1.45 }}>
@@ -845,7 +849,7 @@ export default function Home() {
                         <div key={id} className="vesper-hover-row" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1.1fr 1.1fr 1.3fr", gap: 12, padding: "14px 18px", alignItems: "center", borderBottom: "1px solid var(--border)", transition: "background .15s" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                             <TokenIcon symbol={p.symbol} size={32} radius={10} />
-                            <div><div style={{ fontFamily: "'Space Grotesk'", fontWeight: 600, fontSize: 14 }}>{p.confSymbol}</div><div style={{ fontSize: 11.5, color: "var(--muted)" }}>{p.name} · {p.decimals}→{p.confDecimals ?? confDecimalsOf(p.decimals ?? 18)} dec · rate {formatRate(p.rate)}</div></div>
+                            <div><div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "'Space Grotesk'", fontWeight: 600, fontSize: 14 }}>{p.confSymbol}{p.official ? <span title="Official Zama cTokenMock" style={{ fontSize: 9.5, color: "var(--accent-ink)", background: "var(--accent)", padding: "1px 5px", borderRadius: 4, fontFamily: "'Instrument Sans'", fontWeight: 700 }}>✓</span> : <span title="Third-party pair registered onchain — not part of Zama's official set" style={{ fontSize: 9.5, color: "var(--muted)", background: "var(--surface2)", border: "1px solid var(--border)", padding: "1px 5px", borderRadius: 4, fontFamily: "'Instrument Sans'", fontWeight: 600 }}>Community</span>}</div><div style={{ fontSize: 11.5, color: "var(--muted)" }}>{p.name} · {p.decimals}→{p.confDecimals ?? confDecimalsOf(p.decimals ?? 18)} dec · rate {formatRate(p.rate)}</div></div>
                           </div>
                           <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 13 }}>{erc20Fmt}</div>
                           <div>
